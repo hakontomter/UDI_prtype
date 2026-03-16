@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UDI – Produktivitet og kostnad per sak</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .card-shadow { box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08); }
+    .soft-border { border: 1px solid rgba(15,23,42,0.08); }
+    .tab-active { background: linear-gradient(135deg, #1d4ed8, #2563eb); color: white; }
+    .metric-up { color: #dc2626; }
+    .metric-down { color: #059669; }
+    .metric-neutral { color: #64748b; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-900">
+  <div class="min-h-screen p-6 lg:p-8">
+    <div class="max-w-7xl mx-auto space-y-6">
+
+      <!-- Navbar -->
+      <section class="bg-white rounded-3xl card-shadow soft-border px-6 py-5">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div class="text-sm text-slate-500">UDI / Produktivitet</div>
+            <h1 class="text-3xl font-semibold tracking-tight">Kostnad per sak</h1>
+            <p class="text-slate-600 mt-1">Ledelsesdashboard for å se hvor produktiviteten er høy eller lav, og hvorfor.</p>
+          </div>
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <select id="caseTypeSelect" class="rounded-2xl border border-slate-200 px-4 py-3 bg-white text-sm">
+              <option value="Alle">Alle sakstyper</option>
+              <option value="Beskyttelse">Beskyttelse</option>
+              <option value="Opphold">Opphold</option>
+              <option value="Statsborgerskap">Statsborgerskap</option>
+              <option value="Andre vedtak">Andre vedtak</option>
+            </select>
+            <select id="periodSelect" class="rounded-2xl border border-slate-200 px-4 py-3 bg-white text-sm">
+              <option value="6">Siste 6 mnd</option>
+              <option value="12">Siste 12 mnd</option>
+            </select>
+            <button id="resetBtn" class="rounded-2xl border border-slate-200 px-4 py-3 text-sm bg-slate-50 hover:bg-slate-100 transition">Tilbakestill drilldown</button>
+            <div class="rounded-2xl border border-slate-200 px-4 py-3 text-sm bg-slate-50 flex items-center justify-between">
+              <span class="text-slate-500">Nivå</span>
+              <span id="levelLabel" class="font-medium">Hele UDI</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Hero -->
+      <section class="bg-white rounded-3xl card-shadow soft-border p-6 lg:p-8">
+        <div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div class="text-sm uppercase tracking-[0.2em] text-slate-500">Main story</div>
+            <div class="mt-3 flex items-end gap-4">
+              <div>
+                <div id="mainMetric" class="text-5xl lg:text-6xl font-semibold tracking-tight text-blue-900">Kr 7 500</div>
+                <div class="text-slate-500 mt-2">Kostnad per sak</div>
+              </div>
+              <div id="mainDelta" class="pb-2 text-sm font-medium"></div>
+            </div>
+            <div class="mt-4 text-slate-600 max-w-3xl" id="storyText"></div>
+          </div>
+          <div class="w-full lg:w-auto">
+            <div class="flex flex-wrap gap-2 justify-start lg:justify-end" id="scopeTabs"></div>
+            <div class="mt-4 text-sm text-slate-500 text-left lg:text-right">Drilldown: Hele UDI → avdeling → enhet → saksbehandler</div>
+            <div class="mt-2 text-sm font-medium text-slate-700 text-left lg:text-right" id="breadcrumb"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- KPI Row -->
+      <section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+        <div class="bg-white rounded-3xl p-5 card-shadow soft-border">
+          <div class="text-sm text-slate-500">Automatiseringsgrad</div>
+          <div id="automationMetric" class="mt-3 text-3xl font-semibold"></div>
+          <div id="automationDelta" class="mt-2 text-sm"></div>
+        </div>
+        <div class="bg-white rounded-3xl p-5 card-shadow soft-border">
+          <div class="text-sm text-slate-500">Sykefravær</div>
+          <div id="absenceMetric" class="mt-3 text-3xl font-semibold"></div>
+          <div id="absenceDelta" class="mt-2 text-sm"></div>
+        </div>
+        <div class="bg-white rounded-3xl p-5 card-shadow soft-border">
+          <div class="text-sm text-slate-500">Overtid</div>
+          <div id="overtimeMetric" class="mt-3 text-3xl font-semibold"></div>
+          <div id="overtimeDelta" class="mt-2 text-sm"></div>
+        </div>
+        <div class="bg-white rounded-3xl p-5 card-shadow soft-border">
+          <div class="text-sm text-slate-500">Restanse</div>
+          <div id="backlogMetric" class="mt-3 text-3xl font-semibold"></div>
+          <div id="backlogDelta" class="mt-2 text-sm"></div>
+        </div>
+        <div class="bg-white rounded-3xl p-5 card-shadow soft-border bg-slate-900 text-white">
+          <div class="text-sm text-slate-300">Ferdigbehandlede saker</div>
+          <div id="closedCasesMetric" class="mt-3 text-3xl font-semibold"></div>
+          <div class="mt-2 text-sm text-slate-300">Volum brukes som kontekst for kostnad per sak</div>
+        </div>
+      </section>
+
+      <!-- Main Grid -->
+      <section class="grid grid-cols-1 gap-6">
+        <div class="bg-white rounded-3xl p-6 card-shadow soft-border">
+          <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+            <div>
+              <h2 class="text-xl font-semibold">Utvikling i kostnad per sak</h2>
+              <p class="text-sm text-slate-500">Hva skjedde over tid for valgt nivå og sakstype.</p>
+            </div>
+            <div class="flex gap-2">
+              <button class="period-pill px-4 py-2 rounded-2xl border border-slate-200 text-sm bg-blue-600 text-white" data-period="6">Siste 6 mnd</button>
+              <button class="period-pill px-4 py-2 rounded-2xl border border-slate-200 text-sm bg-white" data-period="12">Siste 12 mnd</button>
+            </div>
+          </div>
+          <div class="h-80"><canvas id="trendChart"></canvas></div>
+        </div>
+      </section>
+
+      <!-- Breakdown -->
+      <section class="grid grid-cols-1 gap-6">
+        <div class="bg-white rounded-3xl p-6 card-shadow soft-border">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h2 class="text-xl font-semibold">Hvor er produktiviteten høy eller lav?</h2>
+              <p class="text-sm text-slate-500">Klikk rad for å drille videre i organisasjonen.</p>
+            </div>
+            <div class="text-sm text-slate-500">Sortert etter kostnad per sak</div>
+          </div>
+          <div class="mt-5 overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="text-slate-500 border-b border-slate-200">
+                  <th class="pb-3 pr-4 font-medium">Navn</th>
+                  <th class="pb-3 pr-4 font-medium">Kostnad/sak</th>
+                  <th class="pb-3 pr-4 font-medium">Automatisering</th>
+                  <th class="pb-3 pr-4 font-medium">Sykefravær</th>
+                  <th class="pb-3 pr-4 font-medium">Overtid</th>
+                  <th class="pb-3 pr-4 font-medium">Restanse</th>
+                  <th class="pb-3 pr-4 font-medium">Trend</th>
+                </tr>
+              </thead>
+              <tbody id="breakdownTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    // ------------------------------------------------------------
+    // Mock data
+    // ------------------------------------------------------------
+    const months12 = ['Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Des', 'Jan', 'Feb', 'Mar', 'Apr', 'Mai', 'Jun'];
+
+    const orgData = {
+      id: 'udi',
+      name: 'Hele UDI',
+      type: 'udi',
+      metrics: {
+        current: { costPerCase: 7500, automation: 31, absence: 8.2, overtime: 9.1, backlog: 3140, closedCases: 1240 },
+        previous: { costPerCase: 7100, automation: 28, absence: 7.3, overtime: 8.0, backlog: 2860, closedCases: 1195 },
+        trendAll: [8200, 8050, 7800, 7400, 7050, 7200, 7900, 7600, 6900, 7100, 7350, 7500],
+        trendByCaseType: {
+          'Alle': [8200, 8050, 7800, 7400, 7050, 7200, 7900, 7600, 6900, 7100, 7350, 7500],
+          'Beskyttelse': [8900, 8750, 8600, 8250, 7900, 8100, 8500, 8350, 7900, 8050, 8250, 8400],
+          'Opphold': [7600, 7480, 7260, 6940, 6700, 6800, 7350, 7100, 6450, 6620, 6800, 6920],
+          'Statsborgerskap': [7000, 6890, 6700, 6400, 6150, 6200, 6600, 6400, 6000, 6120, 6250, 6380],
+          'Andre vedtak': [7900, 7820, 7600, 7250, 7000, 7150, 7800, 7600, 7100, 7240, 7420, 7580]
+        },
+        caseMix: { 'Beskyttelse': 0.32, 'Opphold': 0.29, 'Statsborgerskap': 0.21, 'Andre vedtak': 0.18 }
+      },
+      children: [
+        {
+          id: 'beskyttelse',
+          name: 'Avdeling Beskyttelse',
+          type: 'avdeling',
+          metrics: {
+            current: { costPerCase: 8400, automation: 24, absence: 9.3, overtime: 11.4, backlog: 1260, closedCases: 380 },
+            previous: { costPerCase: 8020, automation: 22, absence: 8.6, overtime: 10.2, backlog: 1185, closedCases: 372 },
+            trendAll: [8800, 8600, 8450, 8100, 7900, 8050, 8500, 8250, 7900, 8050, 8250, 8400],
+            trendByCaseType: {
+              'Alle': [8800, 8600, 8450, 8100, 7900, 8050, 8500, 8250, 7900, 8050, 8250, 8400],
+              'Beskyttelse': [9300, 9200, 9000, 8750, 8500, 8600, 9000, 8850, 8550, 8650, 8850, 9020],
+              'Opphold': [7900, 7700, 7520, 7200, 7000, 7150, 7600, 7380, 7000, 7120, 7300, 7420],
+              'Statsborgerskap': [7200, 7100, 6920, 6600, 6400, 6500, 6800, 6660, 6300, 6400, 6520, 6650],
+              'Andre vedtak': [8100, 8000, 7850, 7520, 7300, 7440, 7900, 7700, 7350, 7480, 7620, 7740]
+            }
+          },
+          children: [
+            {
+              id: 'asyl-mottak',
+              name: 'Enhet Beskyttelsesmottak',
+              type: 'enhet',
+              metrics: {
+                current: { costPerCase: 9100, automation: 18, absence: 10.1, overtime: 13.2, backlog: 740, closedCases: 180 },
+                previous: { costPerCase: 8750, automation: 16, absence: 9.2, overtime: 12.4, backlog: 690, closedCases: 172 },
+                trendAll: [9400, 9250, 9100, 8900, 8650, 8700, 9100, 9000, 8600, 8750, 8920, 9100],
+                trendByCaseType: {
+                  'Alle': [9400, 9250, 9100, 8900, 8650, 8700, 9100, 9000, 8600, 8750, 8920, 9100],
+                  'Beskyttelse': [9800, 9700, 9500, 9300, 9000, 9100, 9500, 9400, 9050, 9180, 9350, 9520],
+                  'Opphold': [7800, 7700, 7550, 7300, 7100, 7200, 7600, 7500, 7150, 7250, 7380, 7480],
+                  'Statsborgerskap': [6900, 6850, 6700, 6500, 6350, 6400, 6650, 6550, 6250, 6330, 6440, 6520],
+                  'Andre vedtak': [7600, 7520, 7400, 7200, 7000, 7080, 7400, 7320, 7050, 7140, 7260, 7340]
+                }
+              },
+              children: [
+                {
+                  id: 'sb-01',
+                  name: 'Saksbehandler A',
+                  type: 'saksbehandler',
+                  metrics: {
+                    current: { costPerCase: 9800, automation: 12, absence: 7.5, overtime: 15.0, backlog: 81, closedCases: 20 },
+                    previous: { costPerCase: 9300, automation: 10, absence: 7.2, overtime: 13.1, backlog: 75, closedCases: 21 },
+                    trendAll: [10100, 9950, 9800, 9550, 9400, 9350, 9750, 9620, 9250, 9400, 9580, 9800],
+                    trendByCaseType: {}
+                  }
+                },
+                {
+                  id: 'sb-02',
+                  name: 'Saksbehandler B',
+                  type: 'saksbehandler',
+                  metrics: {
+                    current: { costPerCase: 8700, automation: 21, absence: 4.8, overtime: 8.0, backlog: 62, closedCases: 25 },
+                    previous: { costPerCase: 8500, automation: 18, absence: 5.3, overtime: 7.2, backlog: 59, closedCases: 24 },
+                    trendAll: [9000, 8900, 8800, 8600, 8450, 8400, 8700, 8600, 8420, 8500, 8600, 8700],
+                    trendByCaseType: {}
+                  }
+                },
+                {
+                  id: 'sb-03',
+                  name: 'Saksbehandler C',
+                  type: 'saksbehandler',
+                  metrics: {
+                    current: { costPerCase: 9300, automation: 16, absence: 11.2, overtime: 16.1, backlog: 78, closedCases: 19 },
+                    previous: { costPerCase: 8900, automation: 14, absence: 10.1, overtime: 14.2, backlog: 72, closedCases: 20 },
+                    trendAll: [9600, 9500, 9400, 9150, 9000, 8980, 9280, 9150, 8900, 9000, 9160, 9300],
+                    trendByCaseType: {}
+                  }
+                }
+              ]
+            },
+            {
+              id: 'klage-beskyttelse',
+              name: 'Enhet Klage Beskyttelse',
+              type: 'enhet',
+              metrics: {
+                current: { costPerCase: 7600, automation: 29, absence: 7.9, overtime: 8.1, backlog: 520, closedCases: 200 },
+                previous: { costPerCase: 7380, automation: 27, absence: 7.1, overtime: 7.7, backlog: 495, closedCases: 200 },
+                trendAll: [7900, 7800, 7700, 7480, 7300, 7350, 7600, 7520, 7260, 7380, 7490, 7600],
+                trendByCaseType: {
+                  'Alle': [7900, 7800, 7700, 7480, 7300, 7350, 7600, 7520, 7260, 7380, 7490, 7600],
+                  'Beskyttelse': [8200, 8100, 8000, 7780, 7600, 7650, 7900, 7810, 7540, 7630, 7750, 7880],
+                  'Opphold': [7100, 7000, 6900, 6720, 6600, 6650, 6880, 6800, 6580, 6660, 6740, 6820],
+                  'Statsborgerskap': [6400, 6320, 6240, 6080, 5950, 6000, 6200, 6120, 5900, 5980, 6060, 6140],
+                  'Andre vedtak': [7000, 6920, 6850, 6680, 6520, 6580, 6800, 6720, 6500, 6580, 6660, 6740]
+                }
+              },
+              children: []
+            }
+          ]
+        },
+        {
+          id: 'opphold',
+          name: 'Avdeling Opphold',
+          type: 'avdeling',
+          metrics: {
+            current: { costPerCase: 6880, automation: 37, absence: 7.6, overtime: 7.1, backlog: 980, closedCases: 470 },
+            previous: { costPerCase: 6720, automation: 35, absence: 7.2, overtime: 6.5, backlog: 910, closedCases: 450 },
+            trendAll: [7300, 7200, 7050, 6800, 6600, 6650, 7000, 6900, 6600, 6720, 6790, 6880],
+            trendByCaseType: {
+              'Alle': [7300, 7200, 7050, 6800, 6600, 6650, 7000, 6900, 6600, 6720, 6790, 6880],
+              'Beskyttelse': [7800, 7700, 7550, 7300, 7100, 7180, 7520, 7420, 7100, 7200, 7320, 7440],
+              'Opphold': [6800, 6700, 6550, 6320, 6150, 6200, 6500, 6400, 6120, 6220, 6300, 6380],
+              'Statsborgerskap': [6200, 6120, 6000, 5800, 5650, 5700, 5950, 5850, 5600, 5680, 5750, 5820],
+              'Andre vedtak': [7000, 6920, 6780, 6540, 6400, 6460, 6750, 6660, 6380, 6480, 6560, 6640]
+            }
+          },
+          children: [
+            {
+              id: 'familie',
+              name: 'Enhet Familieinnvandring',
+              type: 'enhet',
+              metrics: {
+                current: { costPerCase: 6450, automation: 43, absence: 6.9, overtime: 5.8, backlog: 420, closedCases: 240 },
+                previous: { costPerCase: 6320, automation: 41, absence: 6.8, overtime: 5.2, backlog: 398, closedCases: 228 },
+                trendAll: [6800, 6720, 6600, 6400, 6250, 6300, 6500, 6420, 6200, 6320, 6380, 6450],
+                trendByCaseType: {}
+              },
+              children: []
+            },
+            {
+              id: 'arbeid',
+              name: 'Enhet Arbeidstillatelser',
+              type: 'enhet',
+              metrics: {
+                current: { costPerCase: 7100, automation: 35, absence: 8.1, overtime: 8.2, backlog: 560, closedCases: 230 },
+                previous: { costPerCase: 6950, automation: 33, absence: 7.6, overtime: 7.7, backlog: 512, closedCases: 222 },
+                trendAll: [7400, 7320, 7200, 7000, 6840, 6900, 7150, 7050, 6840, 6950, 7020, 7100],
+                trendByCaseType: {}
+              },
+              children: []
+            }
+          ]
+        },
+        {
+          id: 'statsborgerskap',
+          name: 'Avdeling Statsborgerskap',
+          type: 'avdeling',
+          metrics: {
+            current: { costPerCase: 6380, automation: 42, absence: 6.8, overtime: 5.4, backlog: 900, closedCases: 390 },
+            previous: { costPerCase: 6120, automation: 40, absence: 6.1, overtime: 4.9, backlog: 765, closedCases: 373 },
+            trendAll: [6700, 6600, 6480, 6280, 6000, 6060, 6320, 6200, 5900, 6120, 6240, 6380],
+            trendByCaseType: {
+              'Alle': [6700, 6600, 6480, 6280, 6000, 6060, 6320, 6200, 5900, 6120, 6240, 6380],
+              'Beskyttelse': [7200, 7100, 7000, 6800, 6500, 6580, 6900, 6780, 6480, 6620, 6740, 6880],
+              'Opphold': [6500, 6400, 6280, 6080, 5850, 5900, 6150, 6040, 5800, 5920, 6000, 6120],
+              'Statsborgerskap': [5900, 5800, 5680, 5480, 5300, 5350, 5600, 5480, 5250, 5360, 5450, 5540],
+              'Andre vedtak': [6400, 6320, 6200, 6020, 5800, 5860, 6100, 6000, 5750, 5860, 5940, 6020]
+            }
+          },
+          children: [
+            {
+              id: 'stats-enhet-1',
+              name: 'Enhet Søknadsbehandling',
+              type: 'enhet',
+              metrics: {
+                current: { costPerCase: 6120, automation: 46, absence: 6.2, overtime: 4.4, backlog: 430, closedCases: 220 },
+                previous: { costPerCase: 5980, automation: 44, absence: 5.8, overtime: 4.0, backlog: 382, closedCases: 214 },
+                trendAll: [6350, 6280, 6180, 6020, 5850, 5880, 6080, 6020, 5800, 5980, 6060, 6120],
+                trendByCaseType: {}
+              },
+              children: []
+            },
+            {
+              id: 'stats-enhet-2',
+              name: 'Enhet Kvalitet og kontroll',
+              type: 'enhet',
+              metrics: {
+                current: { costPerCase: 6710, automation: 38, absence: 7.4, overtime: 6.6, backlog: 470, closedCases: 170 },
+                previous: { costPerCase: 6450, automation: 36, absence: 6.4, overtime: 5.8, backlog: 383, closedCases: 159 },
+                trendAll: [7050, 6940, 6800, 6540, 6220, 6280, 6570, 6450, 6120, 6450, 6580, 6710],
+                trendByCaseType: {}
+              },
+              children: []
+            }
+          ]
+        }
+      ]
+    };
+
+    // ------------------------------------------------------------
+    // State
+    // ------------------------------------------------------------
+    const state = {
+      path: ['udi'],
+      caseType: 'Alle',
+      period: 6
+    };
+
+    // ------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------
+    function formatKr(v) {
+      return 'Kr ' + Math.round(v).toLocaleString('nb-NO');
+    }
+
+    function formatPct(v) {
+      return `${v.toFixed(1).replace('.', ',')}%`;
+    }
+
+    function deltaClass(num, inverse = false) {
+      if (num === 0) return 'metric-neutral';
+      const positive = inverse ? num < 0 : num > 0;
+      return positive ? 'metric-up' : 'metric-down';
+    }
+
+    function deltaText(num, suffix = '', inverse = false) {
+      const abs = Math.abs(num);
+      const arrow = num > 0 ? '▲' : num < 0 ? '▼' : '■';
+      const cls = deltaClass(num, inverse);
+      const word = num > 0 ? 'Opp' : num < 0 ? 'Ned' : 'Uendret';
+      return `<span class="${cls}">${arrow} ${word} ${String(abs.toFixed(1)).replace('.', ',')}${suffix}</span> vs. forrige måned`;
+    }
+
+    function findNodeById(node, id) {
+      if (node.id === id) return node;
+      if (!node.children) return null;
+      for (const child of node.children) {
+        const found = findNodeById(child, id);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    function getCurrentNode() {
+      return findNodeById(orgData, state.path[state.path.length - 1]);
+    }
+
+    function getBreadcrumbNodes() {
+      return state.path.map(id => findNodeById(orgData, id)).filter(Boolean);
+    }
+
+    function getTrend(node) {
+      const typeTrend = node.metrics.trendByCaseType?.[state.caseType];
+      const fallback = node.metrics.trendAll || [];
+      const trend = typeTrend && typeTrend.length ? typeTrend : fallback;
+      return state.period === 6 ? trend.slice(-6) : trend;
+    }
+
+    function getLabels() {
+      return state.period === 6 ? months12.slice(-6) : months12;
+    }
+
+    function getCaseTypeProfile(caseType) {
+      const profiles = {
+        'Alle': {
+          costMultiplier: 1.00,
+          automationDelta: 0,
+          absenceDelta: 0,
+          overtimeDelta: 0,
+          backlogDelta: 0,
+          closedCasesMultiplier: 1.00
+        },
+        'Beskyttelse': {
+          costMultiplier: 1.12,
+          automationDelta: -5,
+          absenceDelta: 0.7,
+          overtimeDelta: 1.4,
+          backlogDelta: 120,
+          closedCasesMultiplier: 0.82
+        },
+        'Opphold': {
+          costMultiplier: 0.92,
+          automationDelta: 3,
+          absenceDelta: -0.3,
+          overtimeDelta: -0.8,
+          backlogDelta: -90,
+          closedCasesMultiplier: 1.08
+        },
+        'Statsborgerskap': {
+          costMultiplier: 0.85,
+          automationDelta: 6,
+          absenceDelta: -0.8,
+          overtimeDelta: -1.2,
+          backlogDelta: -140,
+          closedCasesMultiplier: 0.88
+        },
+        'Andre vedtak': {
+          costMultiplier: 1.01,
+          automationDelta: -1,
+          absenceDelta: 0.2,
+          overtimeDelta: 0.3,
+          backlogDelta: 35,
+          closedCasesMultiplier: 0.90
+        }
+      };
+
+      return profiles[caseType] || profiles['Alle'];
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function getDisplayMetrics(node) {
+      const baseCurrent = node.metrics.current;
+      const basePrevious = node.metrics.previous;
+
+      if (state.caseType === 'Alle') {
+        return {
+          current: { ...baseCurrent },
+          previous: { ...basePrevious }
+        };
+      }
+
+      const profile = getCaseTypeProfile(state.caseType);
+
+      const typeTrend = node.metrics.trendByCaseType?.[state.caseType];
+      const currentCostFromTrend = typeTrend?.length
+        ? typeTrend[typeTrend.length - 1]
+        : Math.round(baseCurrent.costPerCase * profile.costMultiplier);
+
+      const previousCostFromTrend = typeTrend?.length > 1
+        ? typeTrend[typeTrend.length - 2]
+        : Math.round(basePrevious.costPerCase * profile.costMultiplier);
+
+      const current = {
+        costPerCase: currentCostFromTrend,
+        automation: clamp(baseCurrent.automation + profile.automationDelta, 0, 100),
+        absence: clamp(baseCurrent.absence + profile.absenceDelta, 0, 100),
+        overtime: clamp(baseCurrent.overtime + profile.overtimeDelta, 0, 100),
+        backlog: Math.max(0, Math.round(baseCurrent.backlog + profile.backlogDelta)),
+        closedCases: Math.max(0, Math.round(baseCurrent.closedCases * profile.closedCasesMultiplier))
+      };
+
+      const previous = {
+        costPerCase: previousCostFromTrend,
+        automation: clamp(basePrevious.automation + profile.automationDelta - 1, 0, 100),
+        absence: clamp(basePrevious.absence + (profile.absenceDelta * 0.85), 0, 100),
+        overtime: clamp(basePrevious.overtime + (profile.overtimeDelta * 0.85), 0, 100),
+        backlog: Math.max(0, Math.round(basePrevious.backlog + (profile.backlogDelta * 0.9))),
+        closedCases: Math.max(0, Math.round(basePrevious.closedCases * (profile.closedCasesMultiplier * 0.98)))
+      };
+
+      return { current, previous };
+    }
+
+    function humanLevel(type) {
+      return ({ udi: 'Hele UDI', avdeling: 'Avdeling', enhet: 'Enhet', saksbehandler: 'Saksbehandler' })[type] || type;
+    }
+
+    function getChildrenForTable(node) {
+      if (node.children && node.children.length) return node.children;
+      return [];
+    }
+
+    // ------------------------------------------------------------
+    // Charts
+    // ------------------------------------------------------------
+    let trendChart;
+
+    function renderTrendChart(node) {
+      const data = getTrend(node);
+      const labels = getLabels();
+      const ctx = document.getElementById('trendChart');
+
+      if (!ctx || typeof Chart === 'undefined') return;
+
+      if (trendChart) trendChart.destroy();
+      trendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Kostnad per sak',
+            data,
+            fill: true,
+            borderColor: '#2563eb',
+            backgroundColor: 'rgba(37, 99, 235, 0.08)',
+            tension: 0.35,
+            borderWidth: 3,
+            pointRadius: 4,
+            pointHoverRadius: 5,
+            pointBackgroundColor: '#2563eb'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => ` ${formatKr(ctx.parsed.y)}`
+              }
+            }
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: '#64748b' } },
+            y: {
+              ticks: {
+                color: '#64748b',
+                callback: (val) => `${Math.round(val / 1000)}k`
+              },
+              grid: { color: 'rgba(100,116,139,0.12)' }
+            }
+          }
+        }
+      });
+    }
+
+    // ------------------------------------------------------------
+    // Render
+    // ------------------------------------------------------------
+    function renderScopeTabs() {
+      const levels = [
+        { label: 'Hele UDI', targetDepth: 1 },
+        { label: 'Avdeling', targetDepth: 2 },
+        { label: 'Enhet', targetDepth: 3 },
+        { label: 'Saksbehandler', targetDepth: 4 }
+      ];
+
+      const currentDepth = state.path.length;
+      const el = document.getElementById('scopeTabs');
+      if (!el) return;
+
+      el.innerHTML = levels.map(level => {
+        const active = currentDepth === level.targetDepth;
+        return `<button class="px-4 py-2 rounded-2xl text-sm border border-slate-200 ${active ? 'tab-active border-blue-600' : 'bg-white'}">${level.label}</button>`;
+      }).join('');
+    }
+
+    function renderHero(node) {
+      const metrics = getDisplayMetrics(node);
+      const cur = metrics.current;
+      const prev = metrics.previous;
+      const delta = cur.costPerCase - prev.costPerCase;
+
+      const mainMetricEl = document.getElementById('mainMetric');
+      const mainDeltaEl = document.getElementById('mainDelta');
+      const levelLabelEl = document.getElementById('levelLabel');
+      const breadcrumbEl = document.getElementById('breadcrumb');
+      const storyTextEl = document.getElementById('storyText');
+
+      if (!mainMetricEl || !mainDeltaEl || !levelLabelEl || !breadcrumbEl || !storyTextEl) return;
+
+      mainMetricEl.textContent = formatKr(cur.costPerCase);
+      mainDeltaEl.innerHTML = deltaText(delta, ' kr', true);
+      levelLabelEl.textContent = humanLevel(node.type);
+      breadcrumbEl.textContent = getBreadcrumbNodes().map(n => n.name).join(' / ');
+
+      const caseTypeLabel = state.caseType === 'Alle' ? 'alle sakstyper' : state.caseType.toLowerCase();
+
+      storyTextEl.innerHTML = `For <strong>${node.name}</strong> er kostnad per sak nå <strong>${formatKr(cur.costPerCase)}</strong> for <strong>${caseTypeLabel}</strong>. Dette er laget for toppledelsen: se nivå, finn avvik, og drill ned for forklaring.`;
+    }
+
+    function renderKpis(node) {
+      const metrics = getDisplayMetrics(node);
+      const cur = metrics.current;
+      const prev = metrics.previous;
+
+      const automationMetric = document.getElementById('automationMetric');
+      const automationDelta = document.getElementById('automationDelta');
+      const absenceMetric = document.getElementById('absenceMetric');
+      const absenceDelta = document.getElementById('absenceDelta');
+      const overtimeMetric = document.getElementById('overtimeMetric');
+      const overtimeDelta = document.getElementById('overtimeDelta');
+      const backlogMetric = document.getElementById('backlogMetric');
+      const backlogDelta = document.getElementById('backlogDelta');
+      const closedCasesMetric = document.getElementById('closedCasesMetric');
+
+      if (!automationMetric || !automationDelta || !absenceMetric || !absenceDelta || !overtimeMetric || !overtimeDelta || !backlogMetric || !backlogDelta || !closedCasesMetric) return;
+
+      automationMetric.textContent = `${cur.automation}%`;
+      automationDelta.innerHTML = deltaText(cur.automation - prev.automation, ' pp', true);
+
+      absenceMetric.textContent = formatPct(cur.absence);
+      absenceDelta.innerHTML = deltaText(cur.absence - prev.absence, ' pp');
+
+      overtimeMetric.textContent = formatPct(cur.overtime);
+      overtimeDelta.innerHTML = deltaText(cur.overtime - prev.overtime, ' pp');
+
+      backlogMetric.textContent = cur.backlog.toLocaleString('nb-NO');
+      backlogDelta.innerHTML = deltaText(cur.backlog - prev.backlog, ' saker');
+
+      closedCasesMetric.textContent = cur.closedCases.toLocaleString('nb-NO');
+    }
+
+    function renderTable(node) {
+      const children = getChildrenForTable(node);
+      const tbody = document.getElementById('breakdownTable');
+      if (!tbody) return;
+
+      if (!children.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="py-6 text-slate-500">Ingen videre drilldown på dette nivået i prototypen.</td></tr>`;
+        return;
+      }
+
+      const rows = [...children].sort((a, b) => {
+        const aMetrics = getDisplayMetrics(a);
+        const bMetrics = getDisplayMetrics(b);
+        return bMetrics.current.costPerCase - aMetrics.current.costPerCase;
+      });
+
+      tbody.innerHTML = rows.map(child => {
+        const metrics = getDisplayMetrics(child);
+        const cur = metrics.current;
+        const prev = metrics.previous;
+        const trend = cur.costPerCase - prev.costPerCase;
+
+        const trendBadge = trend > 0
+          ? `<span class="text-red-700 font-medium">▲ ${Math.round(trend)} kr</span>`
+          : trend < 0
+            ? `<span class="text-emerald-700 font-medium">▼ ${Math.abs(Math.round(trend))} kr</span>`
+            : `<span class="text-slate-500 font-medium">■ 0 kr</span>`;
+
+        return `
+          <tr data-node-id="${child.id}" class="border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition">
+            <td class="py-4 pr-4 font-medium">${child.name}<div class="text-xs text-slate-400 mt-1">Klikk for drilldown</div></td>
+            <td class="py-4 pr-4">${formatKr(cur.costPerCase)}</td>
+            <td class="py-4 pr-4">${cur.automation}%</td>
+            <td class="py-4 pr-4">${formatPct(cur.absence)}</td>
+            <td class="py-4 pr-4">${formatPct(cur.overtime)}</td>
+            <td class="py-4 pr-4">${cur.backlog.toLocaleString('nb-NO')}</td>
+            <td class="py-4 pr-4">${trendBadge}</td>
+          </tr>
+        `;
+      }).join('');
+
+      tbody.querySelectorAll('tr[data-node-id]').forEach(row => {
+        row.addEventListener('click', () => {
+          state.path.push(row.dataset.nodeId);
+          render();
+        });
+      });
+    }
+
+    function render() {
+      const node = getCurrentNode();
+      if (!node) return;
+
+      renderScopeTabs();
+      renderHero(node);
+      renderKpis(node);
+      renderTrendChart(node);
+      renderTable(node);
+    }
+
+    // ------------------------------------------------------------
+    // Events
+    // ------------------------------------------------------------
+    const caseTypeSelect = document.getElementById('caseTypeSelect');
+    if (caseTypeSelect) {
+      caseTypeSelect.addEventListener('change', (e) => {
+        state.caseType = e.target.value;
+        render();
+      });
+    }
+
+    const periodSelect = document.getElementById('periodSelect');
+    if (periodSelect) {
+      periodSelect.addEventListener('change', (e) => {
+        state.period = Number(e.target.value);
+        document.querySelectorAll('.period-pill').forEach(btn => {
+          const active = Number(btn.dataset.period) === state.period;
+          btn.className = `period-pill px-4 py-2 rounded-2xl border border-slate-200 text-sm ${active ? 'bg-blue-600 text-white' : 'bg-white'}`;
+        });
+        render();
+      });
+    }
+
+    document.querySelectorAll('.period-pill').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.period = Number(btn.dataset.period);
+        const periodSelectEl = document.getElementById('periodSelect');
+        if (periodSelectEl) {
+          periodSelectEl.value = String(state.period);
+        }
+        document.querySelectorAll('.period-pill').forEach(p => {
+          const active = Number(p.dataset.period) === state.period;
+          p.className = `period-pill px-4 py-2 rounded-2xl border border-slate-200 text-sm ${active ? 'bg-blue-600 text-white' : 'bg-white'}`;
+        });
+        render();
+      });
+    });
+
+    const resetBtn = document.getElementById('resetBtn');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', () => {
+        state.path = ['udi'];
+        render();
+      });
+    }
+    
+
+    // ------------------------------------------------------------
+    // Init
+    // ------------------------------------------------------------
+    window.addEventListener('DOMContentLoaded', () => {
+      render();
+    });
+  </script>
+</body>
+</html>
